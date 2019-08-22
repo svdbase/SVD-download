@@ -12,6 +12,7 @@ import time
 import shutil
 import warnings
 import requests
+import hashlib
 
 import multiprocessing as mp
 
@@ -28,8 +29,20 @@ args = parser.parse_args()
 failed_log = mp.Manager()
 failed_log = failed_log.list()
 
+check_failed_log = mp.Manager()
+check_failed_log = check_failed_log.list()
 
-def _checksum(filepath, checksum):
+
+def check_integrity(videopath, md5):
+    if not os.path.isfile(videopath):
+        return False
+    md5o = hashlib.md5()
+    with open(videopath, 'rb') as f:
+        for chunk in iter(lambda: f.read(1024 *  1024), b''):
+            md5o.update(chunk)
+    md5c = md5o.hexdigest()
+    if md5c != md5:
+        return False
     return True
 
 
@@ -47,21 +60,24 @@ def worker(idx, mpq):
                 break
             start_t = time.time()
             succ = False
+            failed_cnt = 0
             for ind in range(args.num_retries):
                 try:
                     r = requests.get(url)
                     with open(videopath, 'wb') as fp:
                         fp.write(r.content)
                 except Exception as e:
-                    failed_log.append(video)
-                    pass
+                    failed_cnt += 1
                 if checksum is not None:
-                    succ = _checksum(videopath, checksum)
-                    if succ:
-                        break
+                    succ = check_integrity(videopath, checksum)
+                    if not succ:
+                        check_failed_log.append(video)
+                    break
                 else:
                     succ = True
                     break
+            if failed_cnt == args.num_retries:
+                failed_log.append(video)
             end_t = time.time() - start_t
             if succ:
                 print('{:5d} video: {} is downloaded successfully. Time: {:.5f}(s)'.format(index, video, end_t))
@@ -126,6 +142,13 @@ if __name__ == "__main__":
             for lines in failed_log:
                 fp.write(lines + '\n')
         print('failed videos are store in log/failed-log.log')
+
+    check_failed_log = list(check_failed_log)
+    if len(check_failed_log) > 0:
+        with open('log/check-failed-log.log', 'w') as fp:
+            for lines in check_failed_log:
+                fp.write(lines + '\n')
+        print('checksum failed videos are store in log/check-failed-log.log')
 
     print('all done')
 
