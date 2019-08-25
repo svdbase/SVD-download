@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--dst-path', type=str, required=True, help='destination to store videos')
 parser.add_argument('--urls-path', type=str, required=True, help='path to urls file')
-parser.add_argument('--num-procs', type=int, default=20, help='number of process')
+parser.add_argument('--num-procs', type=int, default=10, help='number of process')
 parser.add_argument('--num-retries', type=int, default=3, help='number of retries')
 parser.add_argument('--checksum-path', type=str, help='path to checksum files')
 parser.add_argument('--verbose', action='store_true', default=False)
@@ -38,7 +38,7 @@ def check_integrity(videopath, md5):
         return False
     md5o = hashlib.md5()
     with open(videopath, 'rb') as f:
-        for chunk in iter(lambda: f.read(1024 *  1024), b''):
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
             md5o.update(chunk)
     md5c = md5o.hexdigest()
     if md5c != md5:
@@ -56,8 +56,9 @@ def worker(idx, mpq):
             index, video, url, checksum = line[0], line[1], line[2], line[3]
             videopath = os.path.join(args.dst_path, video)
             if os.path.exists(videopath):
-                print('{:5d} video: {} is downloaded already.'.format(index, video))
-                break
+                if args.verbose or index % 10000 == 0:
+                    print('{:6d} video: {} is downloaded already.'.format(index, video))
+                continue
             start_t = time.time()
             succ = False
             failed_cnt = 0
@@ -72,15 +73,16 @@ def worker(idx, mpq):
                     succ = check_integrity(videopath, checksum)
                     if not succ:
                         check_failed_log.append(video)
-                    break
+                    continue
                 else:
                     succ = True
-                    break
+                    continue
             if failed_cnt == args.num_retries:
                 failed_log.append(video)
             end_t = time.time() - start_t
             if succ:
-                print('{:5d} video: {} is downloaded successfully. Time: {:.5f}(s)'.format(index, video, end_t))
+                if args.verbose or index % 10000 == 0:
+                    print('{:6d} video: {} is downloaded successfully. Time: {:.3f}(s)'.format(index, video, end_t))
         except Exception as e:
             print('Exception: {}'.format(e))
     print('process: {} done'.format(idx))
@@ -153,7 +155,7 @@ if __name__ == "__main__":
     print('all done')
 
 '''bash
-python download_demo.py --dst-path /data1/jiangqy/dataset/svd/videos --urls-path data/urls-head
+python download_demo.py --dst-path /data1/jiangqy/dataset/svd/videos --urls-path data/urls
 '''
 
 
